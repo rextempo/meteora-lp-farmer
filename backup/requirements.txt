@@ -1,0 +1,8 @@
+flask==3.0.2
+flask-cors==4.0.0
+pandas==2.2.1
+apscheduler==3.10.4
+requests==2.31.0
+urllib3==2.2.1
+base58==2.1.1
+solana==0.32.0 
