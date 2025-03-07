@@ -1,1 +1,9 @@
- 
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite3
+*.log
+.DS_Store
+Thumbs.db
+top_100_active_pools.csv
+meteora_*_pools_*.csv

@@ -269,12 +269,14 @@ class MeteoraDLMMAnalyzer:
         filtered_pools['liquidity_risk'] = 1 / np.log10(filtered_pools['tvl'] + 1)  # TVL越小，流动性风险越大
         
         # 计算综合得分 (追求高收益但风险可控)
+        filtered_pools['daily_fee_tvl_ratio'] = filtered_pools['fees_24h'] / filtered_pools['tvl']
+        filtered_pools['volume_stability'] = 1 / (1 + np.std(filtered_pools['volume_24h']) / np.mean(filtered_pools['volume_24h']) if np.mean(filtered_pools['volume_24h']) > 0 else float('inf'))
         filtered_pools['score'] = (
             # 收益因素 (70%)
             0.7 * (
-                0.5 * np.log10(filtered_pools['total_apy'] + 1) +  # 总APY (50%)
-                0.3 * np.log10(filtered_pools['fee_apy'] + 1) +    # 费用APY (30%)
-                0.2 * np.log10(filtered_pools['activity_ratio'] + 1)  # 活跃度 (20%)
+                0.5 * np.log10(filtered_pools['daily_fee_tvl_ratio'] * 100 + 1) +  # 日费用/TVL比率 (50%)
+                0.3 * np.log10(filtered_pools['activity_ratio'] + 1) +             # 活跃度 (30%)
+                0.2 * filtered_pools['volume_stability']                           # 交易量稳定性 (20%)
             ) -
             # 风险因素 (30%)
             0.3 * (
@@ -344,22 +346,51 @@ def main():
             
             # 显示前10个最佳投资池子
             top_10 = results.head(10)
-            logger.info("\n前10个最佳LP投资池子 (高收益+风险可控):")
+            
+            # 打印表头
+            logger.info("\n" + "="*80)
+            logger.info(" "*25 + "前10个最佳LP投资机会" + " "*25)
+            logger.info("="*80)
+            
+            # 打印表格头部
+            header = f"{'排名':^4} | {'池子名称':<15} | {'日收益率':^8} | {'活跃度':^8} | {'风险评级':^8} | {'综合得分':^8} | {'TVL($)':^12}"
+            divider = "-"*90
+            logger.info(header)
+            logger.info(divider)
+            
+            # 定义风险评级函数
+            def get_risk_rating(volatility, liquidity_risk):
+                risk_score = volatility * 0.7 + liquidity_risk * 0.3
+                if risk_score < 0.3:
+                    return "低"
+                elif risk_score < 0.6:
+                    return "中"
+                else:
+                    return "高"
+            
+            # 打印每个池子的简要信息
             for i, (_, pool) in enumerate(top_10.iterrows(), 1):
-                logger.info(f"#{i} {pool['name']}")
-                logger.info(f"地址: {pool['address']}")
-                logger.info(f"综合得分: {pool['score']:.4f}")
-                logger.info(f"TVL: ${pool['tvl']:,.2f}")
-                logger.info(f"24h交易量: ${pool['volume_24h']:,.2f}")
-                logger.info(f"总APY: {pool['total_apy']:.2f}%")
-                logger.info(f"基础APY: {pool['apy']:.2f}%")
-                logger.info(f"农场APY: {pool['farm_apy']:.2f}%")
-                logger.info(f"费用APY: {pool['fee_apy']:.2f}%")
-                logger.info(f"活跃度: {pool['activity_ratio']:.2f}")
-                logger.info(f"基础费率: {pool['base_fee']:.2f}%")
-                logger.info(f"最大费率: {pool['max_fee']:.2f}%")
-                logger.info(f"Bin步长: {pool['bin_step']}")
-                logger.info("---")
+                daily_return = pool['daily_fee_tvl_ratio'] * 100  # 转换为百分比
+                risk_rating = get_risk_rating(pool['price_volatility'], pool['liquidity_risk'])
+                
+                row = f"{i:^4} | {pool['name']:<15} | {daily_return:>7.2f}% | {pool['activity_ratio']:>7.2f} | {risk_rating:^8} | {pool['score']:>7.2f} | ${pool['tvl']:>10,.2f}"
+                logger.info(row)
+            
+            logger.info(divider)
+            logger.info("\n详细信息:")
+            
+            # 打印每个池子的详细信息
+            for i, (_, pool) in enumerate(top_10.iterrows(), 1):
+                daily_return = pool['daily_fee_tvl_ratio'] * 100  # 转换为百分比
+                risk_rating = get_risk_rating(pool['price_volatility'], pool['liquidity_risk'])
+                
+                logger.info(f"\n{i}. {pool['name']} (得分: {pool['score']:.2f})")
+                logger.info(f"   地址: {pool['address']}")
+                logger.info(f"   📊 核心指标: 日收益率 {daily_return:.2f}%, 活跃度 {pool['activity_ratio']:.2f}, 风险评级 {risk_rating}")
+                logger.info(f"   💰 资金情况: TVL ${pool['tvl']:,.2f}, 24h交易量 ${pool['volume_24h']:,.2f}")
+                logger.info(f"   💸 费用情况: 基础费率 {pool['base_fee']:.2f}%, 最大费率 {pool['max_fee']:.2f}%, 24h费用 ${pool['fees_24h']:,.2f}")
+                logger.info(f"   📈 收益指标: 费用APY {pool['fee_apy']:.2f}%, 农场APY {pool['farm_apy']:.2f}%")
+                logger.info(f"   ⚙️ 技术参数: Bin步长 {pool['bin_step']}, 价格 {pool['current_price']:.8f}")
         else:
             logger.warning("没有找到符合条件的池子，未生成分析报告")
         
